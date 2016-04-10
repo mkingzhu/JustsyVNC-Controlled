@@ -85,7 +85,8 @@ public:
   TvnServer(bool runsInServiceContext,
             NewConnectionEvents *newConnectionEvents,
             LogInitListener *logInitListener,
-            Logger *logger);
+            Logger *logger,
+            TvnServerListener *tvnServerListener = NULL);
   /**
    * Stops and destroys TightVNC server.
    * @remark don't generate shutdown signal(like shutdown() method does) for listeners.
@@ -99,6 +100,8 @@ public:
    * @fixme place extended information to server info.
    */
   void getServerInfo(TvnServerInfo *info);
+
+  RfbClientManager *getRfbClientManager();
 
   /**
    * Inherited from ConfigReloadListener interface to catch configuration reload event.
@@ -144,11 +147,9 @@ public:
 protected:
   void restartHttpServer();
   void restartControlServer();
-  void restartMainRfbServer();
 
   void stopHttpServer();
   void stopControlServer();
-  void stopMainRfbServer();
 
   // Calls a callback function to change update log properties.
   void changeLogProps();
@@ -190,10 +191,6 @@ protected:
    */
   HttpServer *m_httpServer;
   /**
-   * Main rfb server.
-   */
-  RfbServer *m_rfbServer;
-  /**
    * Extra servers for extra ports. This object is not protected by any mutex
    * and it does not implement any internal locking, so it should be used with
    * caution. Here we change its state on owner creation, on owner deletion
@@ -206,6 +203,8 @@ protected:
   ExtraRfbServers m_extraRfbServers;
 
   LogInitListener *m_logInitListener;
+
+  TvnServerListener *m_tvnServerListener;
 };
 
 #endif

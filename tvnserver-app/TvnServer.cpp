@@ -56,13 +56,15 @@
 TvnServer::TvnServer(bool runsInServiceContext,
                      NewConnectionEvents *newConnectionEvents,
                      LogInitListener *logInitListener,
-                     Logger *logger)
+                     Logger *logger,
+                     TvnServerListener *tvnServerListener)
 : Singleton<TvnServer>(),
   ListenerContainer<TvnServerListener *>(),
   m_runAsService(runsInServiceContext),
   m_logInitListener(logInitListener),
+  m_tvnServerListener(tvnServerListener),
   m_rfbClientManager(0),
-  m_httpServer(0), m_controlServer(0), m_rfbServer(0),
+  m_httpServer(0), m_controlServer(0),
   m_config(runsInServiceContext),
   m_log(logger),
   m_extraRfbServers(&m_log)
@@ -107,7 +109,7 @@ TvnServer::TvnServer(bool runsInServiceContext,
 
    // Instanize zombie killer singleton.
    // FIXME: may be need to do it in another place or use "lazy" initialization.
-  m_rfbClientManager = new RfbClientManager(0, newConnectionEvents, &m_log, desktopFactory);
+  m_rfbClientManager = new RfbClientManager(m_tvnServerListener, newConnectionEvents, &m_log, desktopFactory);
 
   m_rfbClientManager->addListener(this);
 
@@ -120,7 +122,6 @@ TvnServer::TvnServer(bool runsInServiceContext,
     // FIXME: Nested lock in protected code (congifuration locking).
     AutoLock l(&m_mutex);
 
-    restartMainRfbServer();
     (void)m_extraRfbServers.reload(m_runAsService, m_rfbClientManager);
     restartHttpServer();
     restartControlServer();
@@ -134,7 +135,6 @@ TvnServer::~TvnServer()
   stopControlServer();
   stopHttpServer();
   m_extraRfbServers.shutDown();
-  stopMainRfbServer();
 
   ZombieKiller *zombieKiller = ZombieKiller::getInstance();
 
@@ -165,20 +165,12 @@ void TvnServer::onConfigReload(ServerConfig *serverConfig)
     AutoLock l(&m_mutex);
 
     bool toggleMainRfbServer =
-      m_srvConfig->isAcceptingRfbConnections() != (m_rfbServer != 0);
-    bool changeMainRfbPort = m_rfbServer != 0 &&
-      (m_srvConfig->getRfbPort() != (int)m_rfbServer->getBindPort());
+      m_srvConfig->isAcceptingRfbConnections() != false;
+    bool changeMainRfbPort = false;
 
     const TCHAR *bindHost =
       m_srvConfig->isOnlyLoopbackConnectionsAllowed() ? _T("localhost") : _T("0.0.0.0");
-    bool changeBindHost =  m_rfbServer != 0 &&
-      _tcscmp(m_rfbServer->getBindHost(), bindHost) != 0;
-
-    if (toggleMainRfbServer ||
-        changeMainRfbPort ||
-        changeBindHost) {
-      restartMainRfbServer();
-    }
+    bool changeBindHost =  false;
 
     // NOTE: ExtraRfbServers::reload() does not throw exceptions if some
     //       servers did not start. However, it returns false in that case.
@@ -208,7 +200,7 @@ void TvnServer::getServerInfo(TvnServerInfo *info)
   bool rfbServerListening = true;
   {
     AutoLock l(&m_mutex);
-    rfbServerListening = m_rfbServer != 0;
+    rfbServerListening = false;
   }
 
   StringStorage statusString;
@@ -245,6 +237,11 @@ void TvnServer::getServerInfo(TvnServerInfo *info)
                             statusString.getString());
   info->m_acceptFlag = rfbServerListening && !vncPasswordsError;
   info->m_serviceFlag = m_runAsService;
+}
+
+RfbClientManager *TvnServer::getRfbClientManager()
+{
+  return m_rfbClientManager;
 }
 
 void TvnServer::generateExternalShutdownSignal()
@@ -355,28 +352,6 @@ void TvnServer::restartControlServer()
   }
 }
 
-void TvnServer::restartMainRfbServer()
-{
-  // FIXME: Errors are critical here, they should not be ignored.
-
-  stopMainRfbServer();
-
-  if (!m_srvConfig->isAcceptingRfbConnections()) {
-    return;
-  }
-
-  const TCHAR *bindHost = m_srvConfig->isOnlyLoopbackConnectionsAllowed() ? _T("localhost") : _T("0.0.0.0");
-  unsigned short bindPort = m_srvConfig->getRfbPort();
-
-  m_log.message(_T("Starting main RFB server"));
-
-  try {
-    m_rfbServer = new RfbServer(bindHost, bindPort, m_rfbClientManager, m_runAsService, &m_log);
-  } catch (Exception &ex) {
-    m_log.error(_T("Failed to start main RFB server: \"%s\""), ex.getMessage());
-  }
-}
-
 void TvnServer::stopHttpServer()
 {
   m_log.message(_T("Stopping HTTP server"));
@@ -404,21 +379,6 @@ void TvnServer::stopControlServer()
   }
   if (controlServer != 0) {
     delete controlServer;
-  }
-}
-
-void TvnServer::stopMainRfbServer()
-{
-  m_log.message(_T("Stopping main RFB server"));
-
-  RfbServer *rfbServer = 0;
-  {
-    AutoLock l(&m_mutex);
-    rfbServer = m_rfbServer;
-    m_rfbServer = 0;
-  }
-  if (rfbServer != 0) {
-    delete rfbServer;
   }
 }
 

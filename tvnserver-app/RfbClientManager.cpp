@@ -27,11 +27,12 @@
 #include "QueryConnectionApplication.h"
 #include "server-config-lib/Configurator.h"
 
-RfbClientManager::RfbClientManager(const TCHAR *serverName,
+RfbClientManager::RfbClientManager(TvnServerListener *tvnServerListener,
                                    NewConnectionEvents *newConnectionEvents,
                                    LogWriter *log,
                                    DesktopFactory *desktopFactory)
-: m_nextClientId(0),
+: m_tvnServerListener(tvnServerListener),
+  m_nextClientId(0),
   m_desktop(0),
   m_newConnectionEvents(newConnectionEvents),
   m_log(log),
@@ -51,6 +52,8 @@ RfbClientManager::~RfbClientManager()
 void RfbClientManager::onClientTerminate()
 {
   validateClientList();
+  if (m_tvnServerListener)
+    m_tvnServerListener->onTvnServerShutdown();
 }
 
 Desktop *RfbClientManager::onClientAuth(RfbClient *client)

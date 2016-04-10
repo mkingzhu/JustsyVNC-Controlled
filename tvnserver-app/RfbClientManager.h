@@ -38,6 +38,7 @@
 // Listener interfaces
 #include "RfbClientManager.h"
 #include "RfbClientManagerEventListener.h"
+#include "TvnServerListener.h"
 #include "rfb-sconn/ClientTerminationListener.h"
 #include "desktop/ClipboardListener.h"
 #include "desktop/AbnormDeskTermListener.h"
@@ -71,7 +72,7 @@ class RfbClientManager: public ClientTerminationListener,
 {
 public:
   // FIXME: parameter is not used.
-  RfbClientManager(const TCHAR *serverName,
+  RfbClientManager(TvnServerListener *tvnServerListener,
                    NewConnectionEvents *newConnectionEvents,
                    LogWriter *log,
                    DesktopFactory *desktopFactory);
@@ -125,6 +126,8 @@ private:
   void updateIpInBan(const StringStorage *ip, bool success);
   // Removes deprecated bans from the ban list.
   void refreshBan();
+
+  TvnServerListener *m_tvnServerListener;
 
   ClientList m_nonAuthClientList;
   ClientList m_clientList;

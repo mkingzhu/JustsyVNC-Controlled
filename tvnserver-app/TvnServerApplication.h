@@ -59,6 +59,19 @@ public:
    */
   virtual ~TvnServerApplication();
 
+  // 传递命令行参数
+  void setIp(const StringStorage &ip);
+  StringStorage getIp() const;
+
+  void setUser(const StringStorage &user);
+  StringStorage getUser() const;
+
+  void setNeedConfirm(const StringStorage &needConfirm);
+  StringStorage getNeedConfirm() const;
+
+  void setMagic(const StringStorage &magic);
+  StringStorage getMagic() const;
+
   /**
    * Runs TightVNC server windows application.
    *
@@ -86,6 +99,13 @@ private:
   // This is a callback function that calls when log properties have changed.
   virtual void onChangeLogProps(const TCHAR *newLogDir, unsigned char newLevel);
 
+  void connectToServer();
+
+  StringStorage m_ip;
+  StringStorage m_user;
+  StringStorage m_needConfirm;
+  StringStorage m_magic;
+
   FileLogger m_fileLogger;
 
   /**
@@ -96,10 +116,6 @@ private:
    * TightVNC server.
    */
   TvnServer *m_tvnServer;
-  /**
-   * TvnControl application watcher.
-   */
-  WsConfigRunner *m_tvnControlRunner;
 
   NewConnectionEvents *m_newConnectionEvents;
 };
