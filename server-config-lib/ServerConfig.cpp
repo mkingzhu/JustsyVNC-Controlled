@@ -32,7 +32,7 @@ ServerConfig::ServerConfig()
 : m_rfbPort(5900), m_httpPort(5800),
   m_disconnectAction(DA_DO_NOTHING), m_logLevel(0), m_useControlAuth(false),
   m_controlAuthAlwaysChecking(false),
-  m_acceptRfbConnections(true), m_useAuthentication(true),
+  m_acceptRfbConnections(true), m_useAuthentication(false),
   m_onlyLoopbackConnections(false), m_acceptHttpConnections(true),
   m_enableAppletParamInUrl(true), m_enableFileTransfers(true),
   m_mirrorDriverAllowed(true),
