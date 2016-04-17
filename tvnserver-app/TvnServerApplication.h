@@ -25,6 +25,8 @@
 #ifndef _TVN_SERVER_APPLICATION_H_
 #define _TVN_SERVER_APPLICATION_H_
 
+#include "thread/GlobalMutex.h"
+
 #include "util/CommonHeader.h"
 #include "util/winhdr.h"
 
@@ -107,6 +109,8 @@ private:
 
   SocketIPv4 *connectToServer();
   void writeHead(SocketIPv4 *socket, bool confirmed);
+  void start(SocketIPv4 *socket);
+  void closePreConnection();
 
   StringStorage m_ip;
   StringStorage m_user;
@@ -123,6 +127,8 @@ private:
    * TightVNC server.
    */
   TvnServer *m_tvnServer;
+
+  GlobalMutex *m_appInstanceMutex;
 
   NewConnectionEvents *m_newConnectionEvents;
 

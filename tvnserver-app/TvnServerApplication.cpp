@@ -26,8 +26,6 @@
 #include "ServerCommandLine.h"
 #include "TvnServerHelp.h"
 
-#include "thread/GlobalMutex.h"
-
 #include "util/ResourceLoader.h"
 #include "util/StringTable.h"
 #include "tvnserver-app/NamingDefs.h"
@@ -36,6 +34,11 @@
 #include "network/RfbInputGate.h"
 #include "network/RfbOutputGate.h"
 #include "network/socket/SocketStream.h"
+
+#include "tvncontrol-app/ControlPipeName.h"
+#include "tvncontrol-app/ControlProxy.h"
+#include "tvncontrol-app/Transport.h"
+#include "tvncontrol-app/TransportFactory.h"
 
 #include "tvnserver/resource.h"
 
@@ -48,6 +51,7 @@ TvnServerApplication::TvnServerApplication(HINSTANCE hInstance,
 : WindowsApplication(hInstance, windowClassName),
   m_fileLogger(true),
   m_tvnServer(0),
+  m_appInstanceMutex(0),
   m_commandLine(commandLine),
   m_newConnectionEvents(newConnectionEvents)
 {
@@ -104,18 +108,6 @@ StringStorage TvnServerApplication::getMagic() const
 
 int TvnServerApplication::run()
 {
-  // Reject 2 instances of TightVNC server application.
-  GlobalMutex *appInstanceMutex;
-  try {
-    appInstanceMutex = new GlobalMutex(
-      ServerApplicationNames::SERVER_INSTANCE_MUTEX_NAME, false, true);
-  } catch (...) {
-    MessageBox(0,
-               StringTable::getString(IDS_SERVER_ALREADY_RUNNING),
-               StringTable::getString(IDS_MBC_TVNSERVER), MB_OK | MB_ICONEXCLAMATION);
-    return 1;
-  }
-
   try {
     if (m_needConfirm.isEqualTo(_T("1"))) {
       m_confirmDialog->show();
@@ -130,8 +122,8 @@ int TvnServerApplication::run()
       m_tvnServer->removeListener(this);
       delete m_tvnServer;
     }
-    if (appInstanceMutex) {
-      delete appInstanceMutex;
+    if (m_appInstanceMutex) {
+      delete m_appInstanceMutex;
     }
     return exitCode;
   } catch (Exception &e) {
@@ -169,9 +161,7 @@ void TvnServerApplication::onConfirm(bool confirmed)
     socket = connectToServer();
     writeHead(socket, confirmed);
     if (confirmed) {
-      m_tvnServer = new TvnServer(false, m_newConnectionEvents, this, &m_fileLogger, this);
-      m_tvnServer->addListener(this);
-      m_tvnServer->getRfbClientManager()->addNewConnection(socket, new ViewPortState, false, false);
+      start(socket);
     }
     else {
       socket->close();
@@ -248,4 +238,47 @@ void TvnServerApplication::writeHead(SocketIPv4 *socket, bool confirmed)
   INT32 statusCode = input->readInt32();
   if (200 != statusCode)
     throw Exception();
+}
+
+void TvnServerApplication::start(SocketIPv4 *socket)
+{
+  try {
+    m_appInstanceMutex = new GlobalMutex(
+      ServerApplicationNames::SERVER_INSTANCE_MUTEX_NAME, false, true);
+  }
+  catch (...) {
+    closePreConnection();
+  }
+  m_tvnServer = new TvnServer(false, m_newConnectionEvents, this, &m_fileLogger, this);
+  m_tvnServer->addListener(this);
+  m_tvnServer->getRfbClientManager()->addNewConnection(socket, new ViewPortState, false, false);
+}
+
+void TvnServerApplication::closePreConnection()
+{
+  Transport *transport = 0;
+ 
+  StringStorage pipeName;
+  LogWriter log(0);
+  ControlPipeName::createPipeName(false, &pipeName, &log);
+
+  int numTriesRemaining = 10;
+  int msDelayBetweenTries = 2000;
+
+  while (numTriesRemaining-- > 0) {
+    try {
+      transport = TransportFactory::createPipeClientTransport(pipeName.getString());
+      break;
+    }
+    catch (Exception &) {
+      if (numTriesRemaining <= 0) {
+        throw;
+      }
+    }
+    Sleep(msDelayBetweenTries);
+  }
+
+  ControlGate gate(transport->getIOStream());
+  ControlProxy proxy(&gate);
+  proxy.shutdownTightVnc();
 }
