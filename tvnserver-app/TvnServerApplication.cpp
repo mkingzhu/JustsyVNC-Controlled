@@ -164,7 +164,7 @@ void TvnServerApplication::onChangeLogProps(const TCHAR *newLogDir, unsigned cha
 
 void TvnServerApplication::onConfirm(bool confirmed)
 {
-  SocketIPv4 *socket;
+  SocketIPv4 *socket = 0;
   try {
     socket = connectToServer();
     writeHead(socket, confirmed);
@@ -179,10 +179,12 @@ void TvnServerApplication::onConfirm(bool confirmed)
     }
   }
   catch (Exception &ex) {
-    MessageBox(0,
-               _T("Can not connect to server"),
-               _T("Server error"),
-               MB_OK | MB_ICONEXCLAMATION);
+    if (m_needConfirm.isEqualTo(_T("1"))) {
+      MessageBox(0,
+                 _T("Can not connect to server"),
+                 _T("Server error"),
+                 MB_OK | MB_ICONEXCLAMATION);
+    }
 
     if (socket)
       socket->close();
