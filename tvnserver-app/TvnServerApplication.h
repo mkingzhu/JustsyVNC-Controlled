@@ -28,6 +28,8 @@
 #include "util/CommonHeader.h"
 #include "util/winhdr.h"
 
+#include "network/socket/SocketIPv4.h"
+
 #include "win-system/WindowsApplication.h"
 
 #include "TvnServer.h"
@@ -35,6 +37,9 @@
 #include "WsConfigRunner.h"
 #include "log-writer/FileLogger.h"
 #include "LogInitListener.h"
+#include "ConfirmDialog.h"
+
+class ConfirmDialog;
 
 /**
  * Windows TightVNC server application.
@@ -59,7 +64,6 @@ public:
    */
   virtual ~TvnServerApplication();
 
-  // 传递命令行参数
   void setIp(const StringStorage &ip);
   StringStorage getIp() const;
 
@@ -71,6 +75,8 @@ public:
 
   void setMagic(const StringStorage &magic);
   StringStorage getMagic() const;
+
+  void onConfirm(bool confirmed);
 
   /**
    * Runs TightVNC server windows application.
@@ -99,7 +105,8 @@ private:
   // This is a callback function that calls when log properties have changed.
   virtual void onChangeLogProps(const TCHAR *newLogDir, unsigned char newLevel);
 
-  void connectToServer();
+  SocketIPv4 *connectToServer();
+  void writeHead(SocketIPv4 *socket, bool confirmed);
 
   StringStorage m_ip;
   StringStorage m_user;
@@ -118,6 +125,8 @@ private:
   TvnServer *m_tvnServer;
 
   NewConnectionEvents *m_newConnectionEvents;
+
+  ConfirmDialog *m_confirmDialog;
 };
 
 #endif

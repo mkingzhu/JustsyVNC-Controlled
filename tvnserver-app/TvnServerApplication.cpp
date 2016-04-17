@@ -35,7 +35,6 @@
 
 #include "network/RfbInputGate.h"
 #include "network/RfbOutputGate.h"
-#include "network/socket/SocketIPv4.h"
 #include "network/socket/SocketStream.h"
 
 #include "tvnserver/resource.h"
@@ -52,6 +51,7 @@ TvnServerApplication::TvnServerApplication(HINSTANCE hInstance,
   m_commandLine(commandLine),
   m_newConnectionEvents(newConnectionEvents)
 {
+  m_confirmDialog = new ConfirmDialog(this);
 }
 
 TvnServerApplication::~TvnServerApplication()
@@ -117,13 +117,22 @@ int TvnServerApplication::run()
   }
 
   try {
-    connectToServer();
-
+    if (m_needConfirm.isEqualTo(_T("1"))) {
+      m_confirmDialog->show();
+    }
+    else {
+      onConfirm(true);
+    }
+    
     int exitCode = WindowsApplication::run();
 
-    m_tvnServer->removeListener(this);
-    delete m_tvnServer;
-    delete appInstanceMutex;
+    if (m_tvnServer) {
+      m_tvnServer->removeListener(this);
+      delete m_tvnServer;
+    }
+    if (appInstanceMutex) {
+      delete appInstanceMutex;
+    }
     return exitCode;
   } catch (Exception &e) {
     // FIXME: Move string to resource
@@ -153,11 +162,36 @@ void TvnServerApplication::onChangeLogProps(const TCHAR *newLogDir, unsigned cha
   m_fileLogger.changeLogProps(newLogDir, newLevel);
 }
 
-void TvnServerApplication::connectToServer()
+void TvnServerApplication::onConfirm(bool confirmed)
 {
-  m_tvnServer = new TvnServer(false, m_newConnectionEvents, this, &m_fileLogger, this);
-  m_tvnServer->addListener(this);
+  SocketIPv4 *socket;
+  try {
+    socket = connectToServer();
+    writeHead(socket, confirmed);
+    if (confirmed) {
+      m_tvnServer = new TvnServer(false, m_newConnectionEvents, this, &m_fileLogger, this);
+      m_tvnServer->addListener(this);
+      m_tvnServer->getRfbClientManager()->addNewConnection(socket, new ViewPortState, false, false);
+    }
+    else {
+      socket->close();
+      WindowsApplication::shutdown();
+    }
+  }
+  catch (Exception &ex) {
+    MessageBox(0,
+               _T("Can not connect to server"),
+               _T("Server error"),
+               MB_OK | MB_ICONEXCLAMATION);
 
+    if (socket)
+      socket->close();
+    exit(0);
+  }
+}
+
+SocketIPv4 *TvnServerApplication::connectToServer()
+{
   SocketAddressIPv4 ipAddress(m_ip.getString(), 5900);
 
   StringStorage ipAddressString;
@@ -170,7 +204,11 @@ void TvnServerApplication::connectToServer()
   DWORD timeout = 60000;
   socket->setSocketOptions(SOL_SOCKET, SO_RCVTIMEO, (char *)&timeout, sizeof(timeout));
   socket->setSocketOptions(SOL_SOCKET, SO_SNDTIMEO, (char *)&timeout, sizeof(timeout));
+  return socket;
+}
 
+void TvnServerApplication::writeHead(SocketIPv4 *socket, bool confirmed)
+{
   SocketStream *socketStream = new SocketStream(socket);
 
   RfbInputGate *input = new RfbInputGate(socketStream);
@@ -178,11 +216,14 @@ void TvnServerApplication::connectToServer()
 
   static AnsiStringStorage header("JUSTSY-VNC-CONTROLLED");
   static AnsiStringStorage magicKey("MAGIC");
+  static AnsiStringStorage confirmedKey("CONFIRMED");
 
   AnsiStringStorage magic(&m_magic);
+  AnsiStringStorage confirmedStr(confirmed ? "1" : "0");
 
   INT32 length = sizeof(INT32) + header.getLength()
-    + 2 * sizeof(INT32) + magicKey.getLength() + magic.getLength();
+    + 2 * sizeof(INT32) + magicKey.getLength() + magic.getLength()
+    + 2 * sizeof(INT32) + confirmedKey.getLength() + confirmedStr.getLength();
 
   output->writeInt32(length);
   output->writeFully(header.getString(), header.getLength());
@@ -192,14 +233,17 @@ void TvnServerApplication::connectToServer()
   output->writeInt32(magic.getLength());
   output->writeFully(magic.getString(), magic.getLength());
 
+  output->writeInt32(confirmedKey.getLength());
+  output->writeFully(confirmedKey.getString(), confirmedKey.getLength());
+  output->writeInt32(confirmedStr.getLength());
+  output->writeFully(confirmedStr.getString(), confirmedStr.getLength());
+
   output->flush();
 
   length = input->readInt32();
   if (8 != length)
-    throw new IOException();
+    throw Exception();
   INT32 statusCode = input->readInt32();
   if (200 != statusCode)
-    throw new IOException();
-
-  m_tvnServer->getRfbClientManager()->addNewConnection(socket, new ViewPortState, false, false);
+    throw Exception();
 }
